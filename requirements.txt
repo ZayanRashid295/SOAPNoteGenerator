@@ -1,0 +1,6 @@
+httpx
+requests
+PyPDF2
+reportlab
+python-dotenv
+openai
