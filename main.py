@@ -1,9 +1,10 @@
 import os
 import asyncio
 from api_clients import get_soap_notes
-from comparison_engine import compare_soap_notes
+from comparison_engine import compare_soap_notes, merge_soap_notes  
 from explanation_generator import generate_explanation
 from pdf_generator import generate_final_soap_note_pdf, generate_analysis_report_pdf
+from overlap_analysis import identify_overlapping_points
 
 CONVERSATION_FOLDER = 'conversations/'
 OUTPUT_FOLDER = 'output/'
@@ -22,11 +23,9 @@ async def process_conversation(conversation_file: str, idx: int, total: int):
         print(f"\nProcessing Conversation {idx}/{total}: {conversation_file}")
         print("-" * 80)
         
-        # Read the conversation from file
         with open(conversation_file_path, 'r', encoding='utf-8') as file:
             conversation = file.read()
 
-        # Generate SOAP notes from APIs
         print("Generating SOAP notes from APIs...")
         soap_notes = await get_soap_notes(conversation)
         
@@ -34,24 +33,39 @@ async def process_conversation(conversation_file: str, idx: int, total: int):
             print(f"Warning: No valid SOAP notes generated for {conversation_file}")
             return
 
-        # Compare the generated SOAP notes
+        print("\nIndividual SOAP Notes:")
+        print("-" * 80)
+        for api_name, soap_note in soap_notes.items():
+            print(f"\n{api_name.upper()} API SOAP Note:")
+            print(soap_note)
+            print("-" * 80)
+
+        print("\nMerged SOAP Note:")
+        merged_soap = merge_soap_notes(soap_notes)
+        print(merged_soap)
+        print("-" * 80)
+
         print("Comparing SOAP notes...")
         comparison_result = compare_soap_notes(soap_notes)
         
-        # Generate the explanation of comparison
         print("Generating analysis explanation...")
         explanation = generate_explanation(
             soap_notes,
             comparison_result['best_soap_note'],
-            comparison_result['scores']
+            comparison_result['scores'] 
         )
         
-        # Generate PDF reports
+        overlapping_points = identify_overlapping_points(soap_notes)
+        print("\nOverlap Analysis:")
+        for point, color in overlapping_points.items():
+            print(f"[{color.upper()}] {point}")
+
         print("Generating PDF reports...")
         generate_final_soap_note_pdf(comparison_result['best_soap_note'], idx)
         generate_analysis_report_pdf({
             'scores': comparison_result['scores'],
-            'explanation': explanation
+            'explanation': explanation,
+            'overlap_analysis': overlapping_points
         }, idx)
 
         print(f"Successfully processed {conversation_file}")
@@ -72,7 +86,6 @@ async def main():
             print("No conversation files found in the 'conversations' folder.")
             return
         
-        # Process all the conversation files concurrently
         tasks = [
             process_conversation(file, idx, len(conversation_files))
             for idx, file in enumerate(conversation_files, start=1)
@@ -83,12 +96,10 @@ async def main():
     except Exception as e:
         print(f"An error occurred in main: {str(e)}")
     finally:
-        # Ensure to cancel all remaining tasks
         tasks = [task for task in asyncio.all_tasks() if task is not asyncio.current_task()]
         for task in tasks:
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
 
 if __name__ == "__main__":
-    # Make sure to run the asynchronous main function
     asyncio.run(main())

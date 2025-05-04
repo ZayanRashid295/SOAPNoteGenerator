@@ -57,6 +57,12 @@ def generate_analysis_report_pdf(analysis_report, conversation_idx):
         else:
             content += f"{key.capitalize()}:\n{value}\n\n"
     
+    # Add overlap analysis to the content
+    if 'overlap_analysis' in analysis_report:
+        content += "Overlap Analysis:\n\n"
+        for point, color in analysis_report['overlap_analysis'].items():
+            content += f"- {point} ({color})\n"
+    
     filename = f"output/analysis_report_{conversation_idx}.pdf"
     generate_pdf(content, filename)
 

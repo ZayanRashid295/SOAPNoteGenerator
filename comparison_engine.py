@@ -1,30 +1,21 @@
 from typing import List, Dict
 import re
+from collections import Counter, defaultdict
 
 def compare_soap_notes(soap_notes: Dict[str, str]) -> Dict:
     if not soap_notes:
         raise ValueError("No SOAP notes provided for comparison")
 
-    scores = {
-        'completeness': [],
-        'clarity': [],
-        'relevance': []
-    }
-
+    scores = {'completeness': [], 'clarity': [], 'relevance': []}
     notes = list(soap_notes.values())
     api_names = list(soap_notes.keys())
 
     for note in notes:
         if not isinstance(note, str) or not note.strip():
             continue
-
-        completeness_score = evaluate_completeness(note)
-        clarity_score = evaluate_clarity(note)
-        relevance_score = evaluate_relevance(note)
-
-        scores['completeness'].append(completeness_score)
-        scores['clarity'].append(clarity_score)
-        scores['relevance'].append(relevance_score)
+        scores['completeness'].append(evaluate_completeness(note))
+        scores['clarity'].append(evaluate_clarity(note))
+        scores['relevance'].append(evaluate_relevance(note))
 
     if not scores['completeness']:
         raise ValueError("No valid SOAP notes to compare")
@@ -35,7 +26,6 @@ def compare_soap_notes(soap_notes: Dict[str, str]) -> Dict:
          0.3 * scores['relevance'][i])
         for i in range(len(notes))
     ]
-
     best_score_index = total_scores.index(max(total_scores))
 
     return {
@@ -50,57 +40,42 @@ def compare_soap_notes(soap_notes: Dict[str, str]) -> Dict:
     }
 
 def evaluate_completeness(note: str) -> int:
-    sections = {
-        'S': r'(?i)subjective:?.*?(?=(objective:|assessment:|plan:|$))',
-        'O': r'(?i)objective:?.*?(?=(assessment:|plan:|$))',
-        'A': r'(?i)assessment:?.*?(?=(plan:|$))',
-        'P': r'(?i)plan:?.*?(?=$)'
-    }
-    
-    score = 0
-    for section, pattern in sections.items():
-        matches = re.findall(pattern, note, re.DOTALL)
-        if matches and any(m.strip() for m in matches):
-            score += 25
+    sections = ['subjective', 'objective', 'assessment', 'plan']
+    score = sum(25 for section in sections if re.search(fr'(?i){section}:?.*?(?=(objective:|assessment:|plan:|$))', note, re.DOTALL))
     return score
 
 def evaluate_clarity(note: str) -> int:
     sentences = re.split(r'[.!?]+', note)
-    avg_words_per_sentence = sum(len(s.split()) for s in sentences) / len(sentences) if sentences else 0
-    return min(100, int(100 * (1 - abs(15 - avg_words_per_sentence) / 15)))
+    avg_words = sum(len(s.split()) for s in sentences) / len(sentences) if sentences else 0
+    return min(100, int(100 * (1 - abs(15 - avg_words) / 15)))
 
 def evaluate_relevance(note: str) -> int:
     keywords = ['symptoms', 'diagnosis', 'treatment', 'medication', 'follow-up',
                 'vital signs', 'medical history', 'chief complaint']
-    score = 0
-    note_lower = note.lower()
-    for keyword in keywords:
-        if keyword in note_lower:
-            score += 12.5
-    return min(100, score)
+    return min(100, sum(12.5 for keyword in keywords if keyword in note.lower()))
 
 def merge_soap_notes(soap_notes: Dict[str, str]) -> str:
-    """
-    Merge the best sections from multiple SOAP notes into a single final SOAP note.
-    """
-    sections = {
-        'S': r'(?i)subjective:?.*?(?=(objective:|assessment:|plan:|$))',
-        'O': r'(?i)objective:?.*?(?=(assessment:|plan:|$))',
-        'A': r'(?i)assessment:?.*?(?=(plan:|$))',
-        'P': r'(?i)plan:?.*?(?=$)'
-    }
-    
-    merged_sections = {key: "" for key in sections.keys()}
-    
+    all_sections = defaultdict(list)
     for note in soap_notes.values():
-        for section, pattern in sections.items():
-            matches = re.findall(pattern, note, re.DOTALL)
-            if matches:
-                content = max(matches, key=len).strip()  # Choose the longest match
-                if len(content) > len(merged_sections[section]):  # Keep the most detailed section
-                    merged_sections[section] = content
-    
-    final_soap_note = "\n\n".join(
-        f"{section}: {content}" for section, content in merged_sections.items() if content
-    )
-    return final_soap_note
+        for section, content in extract_sections(note).items():
+            if content:
+                all_sections[section].append(content)
+
+    merged_note = ""
+    for section, contents in all_sections.items():
+        unique_points = set(point.strip() for content in contents for point in content.split('.') if point.strip())
+        merged_note += f"\n{section}:\n" + ". ".join(sorted(unique_points)) + ".\n"
+    return merged_note.strip()
+
+def extract_sections(note: str) -> Dict[str, str]:
+    patterns = {
+        'Subjective': r'(?i)subjective:?(.*?)(?=objective:|assessment:|plan:|$)',
+        'Objective': r'(?i)objective:?(.*?)(?=assessment:|plan:|$)',
+        'Assessment': r'(?i)assessment:?(.*?)(?=plan:|$)',
+        'Plan': r'(?i)plan:?(.*?)$'
+    }
+    return {section: (re.search(pattern, note, re.DOTALL).group(1).strip() if re.search(pattern, note, re.DOTALL) else '') for section, pattern in patterns.items()}
+
+def identify_overlapping_points(outputs: Dict[str, str]) -> Dict[str, str]:
+    all_points = Counter(point for output in outputs.values() for point in output.splitlines())
+    return {point: "red" if count == 4 else "green" if count == 3 else "yellow" for point, count in all_points.items() if count >= 2}

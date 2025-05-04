@@ -128,7 +128,7 @@ async def get_microsoft_mai_ds_soap(conversation: str) -> str:
             response = await client.post(
                 "https://openrouter.ai/api/v1/chat/completions",
                 headers={
-                    "Authorization": f"Bearer {openai_api_key_ms}",  # Use the OpenRouter API key
+                    "Authorization": f"Bearer {openai_api_key_ms}",  
                     "Content-Type": "application/json",
                 },
                 json={
